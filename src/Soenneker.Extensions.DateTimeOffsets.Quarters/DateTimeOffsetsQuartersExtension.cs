@@ -103,19 +103,8 @@ public static class DateTimeOffsetsQuartersExtension
     /// rules at that wall time (DST-safe).
     /// </remarks>
     [Pure]
-    public static DateTimeOffset ToStartOfTzQuarter(this DateTimeOffset utcInstant, TimeZoneInfo tz)
-    {
-        DateTimeOffset utc = utcInstant.ToUniversalTime();
-        DateTimeOffset local = TimeZoneInfo.ConvertTime(utc, tz);
-
-        int startMonth = (local.Month - 1) / 3 * 3 + 1;
-
-        // Quarter start as local wall-clock time.
-        DateTime localStart = new(local.Year, startMonth, 1, 0, 0, 0, DateTimeKind.Unspecified);
-
-        DateTime utcStart = TimeZoneInfo.ConvertTimeToUtc(localStart, tz);
-        return new DateTimeOffset(utcStart, TimeSpan.Zero);
-    }
+    public static DateTimeOffset ToStartOfTzQuarter(this DateTimeOffset utcInstant, TimeZoneInfo tz) =>
+        ToStartOfTzQuarterAtOffset(utcInstant, tz, 0);
 
     /// <summary>
     /// Computes the end of the quarter in <paramref name="tz"/> that contains the instant <paramref name="utcInstant"/>,
@@ -131,9 +120,7 @@ public static class DateTimeOffsetsQuartersExtension
     /// </remarks>
     [Pure]
     public static DateTimeOffset ToEndOfTzQuarter(this DateTimeOffset utcInstant, TimeZoneInfo tz) =>
-        utcInstant.ToStartOfTzQuarter(tz)
-                  .AddMonths(3)
-                  .AddTicks(-1);
+        ToStartOfTzQuarterAtOffset(utcInstant, tz, 1).AddTicks(-1);
 
     /// <summary>
     /// Computes the start of the next quarter in <paramref name="tz"/> relative to the instant <paramref name="utcInstant"/>,
@@ -146,8 +133,7 @@ public static class DateTimeOffsetsQuartersExtension
     /// <returns>A UTC <see cref="DateTimeOffset"/> representing the start of the next quarter in <paramref name="tz"/>.</returns>
     [Pure]
     public static DateTimeOffset ToStartOfNextTzQuarter(this DateTimeOffset utcInstant, TimeZoneInfo tz) =>
-        utcInstant.ToStartOfTzQuarter(tz)
-                  .AddMonths(3);
+        ToStartOfTzQuarterAtOffset(utcInstant, tz, 1);
 
     /// <summary>
     /// Computes the start of the previous quarter in <paramref name="tz"/> relative to the instant <paramref name="utcInstant"/>,
@@ -160,8 +146,7 @@ public static class DateTimeOffsetsQuartersExtension
     /// <returns>A UTC <see cref="DateTimeOffset"/> representing the start of the previous quarter in <paramref name="tz"/>.</returns>
     [Pure]
     public static DateTimeOffset ToStartOfPreviousTzQuarter(this DateTimeOffset utcInstant, TimeZoneInfo tz) =>
-        utcInstant.ToStartOfTzQuarter(tz)
-                  .AddMonths(-3);
+        ToStartOfTzQuarterAtOffset(utcInstant, tz, -1);
 
     /// <summary>
     /// Computes the end of the next quarter in <paramref name="tz"/> relative to the instant <paramref name="utcInstant"/>,
@@ -177,9 +162,7 @@ public static class DateTimeOffsetsQuartersExtension
     /// </remarks>
     [Pure]
     public static DateTimeOffset ToEndOfNextTzQuarter(this DateTimeOffset utcInstant, TimeZoneInfo tz) =>
-        utcInstant.ToStartOfTzQuarter(tz)
-                  .AddMonths(6)
-                  .AddTicks(-1);
+        ToStartOfTzQuarterAtOffset(utcInstant, tz, 2).AddTicks(-1);
 
     /// <summary>
     /// Computes the end of the previous quarter in <paramref name="tz"/> relative to the instant <paramref name="utcInstant"/>,
@@ -195,6 +178,32 @@ public static class DateTimeOffsetsQuartersExtension
     /// </remarks>
     [Pure]
     public static DateTimeOffset ToEndOfPreviousTzQuarter(this DateTimeOffset utcInstant, TimeZoneInfo tz) =>
-        utcInstant.ToStartOfTzQuarter(tz)
-                  .AddTicks(-1);
+        ToStartOfTzQuarterAtOffset(utcInstant, tz, 0).AddTicks(-1);
+
+    [Pure]
+    private static DateTimeOffset ToStartOfTzQuarterAtOffset(DateTimeOffset utcInstant, TimeZoneInfo tz, int quarterOffset)
+    {
+        DateTime local = TimeZoneInfo.ConvertTimeFromUtc(utcInstant.UtcDateTime, tz);
+        int startMonth = (local.Month - 1) / 3 * 3 + 1;
+        DateTime localStart = new DateTime(local.Year, startMonth, 1, 0, 0, 0, DateTimeKind.Unspecified)
+                              .AddMonths(quarterOffset * 3);
+
+        while (tz.IsInvalidTime(localStart))
+            localStart = localStart.AddMinutes(1);
+
+        DateTime utcStart;
+
+        if (tz.IsAmbiguousTime(localStart))
+        {
+            TimeSpan[] offsets = tz.GetAmbiguousTimeOffsets(localStart);
+            TimeSpan earlierOffset = offsets[0] >= offsets[1] ? offsets[0] : offsets[1];
+            utcStart = DateTime.SpecifyKind(localStart - earlierOffset, DateTimeKind.Utc);
+        }
+        else
+        {
+            utcStart = TimeZoneInfo.ConvertTimeToUtc(localStart, tz);
+        }
+
+        return new DateTimeOffset(utcStart, TimeSpan.Zero);
+    }
 }
